@@ -1,0 +1,10 @@
+selenium>=4.15.0
+pandas>=2.0.0
+webdriver-manager>=4.0.0
+
+# Core parsing dependencies for the SSRS Excel export
+xlrd
+openpyxl
+lxml
+html5lib
+beautifulsoup4

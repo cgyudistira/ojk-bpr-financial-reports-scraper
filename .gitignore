@@ -1,0 +1,18 @@
+# Python environments
+.venv/
+__pycache__/
+*.py[cod]
+
+# Database and Data Output
+data/
+output/
+downloads/
+
+# Logs
+logs/
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
