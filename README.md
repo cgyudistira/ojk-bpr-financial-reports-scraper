@@ -1,77 +1,85 @@
-# OJK BPR Konvensional Web Scraper
+<div align="center">
+  <img src="logo.png" alt="OJK BPR Scraper Logo" width="200" height="200"/>
+  <h1>OJK BPR Konvensional Financial Reports Scraper</h1>
+  <p><em>An automated web scraping engine to extract public financial data of BPR Konvensional banks from the official Otoritas Jasa Keuangan (OJK) website.</em></p>
+</div>
 
-Scraper otomatis data publikasi keuangan **BPR Konvensional** dari website Resmi Otoritas Jasa Keuangan (OJK). Proyek ini mengambil 5 tipe laporan keuangan (Negara, Laba Rugi, Kualitas Aset, dsb.) secara modular berdasarkan kombinasi Provinsi, Kabupaten, dan Bank.
+---
 
-## 📁 Struktur Proyek Pendekatan Moderen
+## 📖 Overview
 
-Proyek ini telah direstrukturisasi agar standar, modular, dan bersih:
+This project programmatically extracts the 5 primary financial report types (Balance Sheet, Profit & Loss, Asset Quality, Commitments & Contingencies, and Other Information) natively published on the OJK CFS platform. It operates modularly based on the combination of Provinces, Cities, and Banks, ensuring comprehensive database coverage while addressing the underlying complexities of Ext.NET server-side interactions.
+
+## 📁 Project Structure
+
+The codebase is organized following a modern, modular Python architecture:
 
 ```text
 ojk-bpr-financial-reports-scraper/
-├── src/                    # Folder Inti: Core logic scraper
-│   ├── scraper.py          # Class utama OJKScraper dengan Selenium 
-│   ├── database.py         # Pengelolaan koneksi dan data ke SQLite DB
-│   ├── config.py           # Konfigurasi konstanta, path, & selector JS
-│   └── excel_parser.py     # Parser tabel ekstraksi laporan dari DOM
+├── src/                    # Core Web Scraper Application
+│   ├── scraper.py          # Primary OJKScraper Selenium logic 
+│   ├── database.py         # SQLite connection & ORM logic
+│   ├── config.py           # Constants, file paths, and ExtJS selectors
+│   └── excel_parser.py     # DOM-to-data-table parsing logic
 │
-├── scripts/                # Folder Automasi: Skrip operasional
-│   ├── fetch_reports.py    # Skrip iterasi pengekstrak data laporan akhir
-│   ├── scrape_metadata.py  # Skrip penyokong metadata Provinsi, Kota
-│   ├── scrape_kota.py      # Pengambilan Kabupaten spesifik
-│   ├── scrape_banks.py     # Pengambilan Entitas Bank spesifik
-│   └── check_db.py         # Validasi dan print statistik database internal
+├── scripts/                # Operations & Automation Scripts
+│   ├── fetch_reports.py    # Main script to execute the final report scraping
+│   ├── scrape_metadata.py  # Populate baseline Province & City metadata
+│   ├── scrape_kota.py      # Extract specific city entities
+│   ├── scrape_banks.py     # Extract specific Bank entities 
+│   └── check_db.py         # Output database size and health statistics
 │
-├── main.py                 # File entry-point di root untuk memantik operasi
-├── data/                   # Data master SQLite db (`ojk_bpr.db`) 
-├── logs/                   # Log output aplikasi scraper
-├── debug/                  # Kumpulan eksperimen bypass ExtJS (Hanya untuk Referensi)
-├── tests/                  # Script uji e2e
-├── requirements.txt        # Python Dependencies
-└── .agents/workflows/      # Dokumentasi Alur Penanganan ExtJS OJK
+├── main.py                 # Root entry point initializing the operations
+├── data/                   # Master SQLite database storage (`ojk_bpr.db`) 
+├── logs/                   # Application log output
+├── debug/                  # Obsolete ExtJS bypass debugging scripts (For reference)
+├── tests/                  # End-to-End tests
+├── requirements.txt        # Python dependency requirements
+└── .agents/workflows/      # Automated Agent & Workflow ExtJS methodology docs
 ```
 
-## ⚙️ Persiapan & Instalasi
+## ⚙️ Setup & Installation
 
-Pastikan memiliki **Python 3.9+** dan browser **Google Chrome**.
+Ensure you have **Python 3.9+** and **Google Chrome** installed.
 
 ```bash
-# Buat Virtual Environment
+# Create a Virtual Environment
 python -m venv .venv
 
-# Aktifkan Environment (Windows)
+# Activate the Environment (Windows)
 .venv\Scripts\activate
 
-# Instal dependensi
+# Install requirements
 pip install -r requirements.txt
 ```
 
-## 🚀 Panduan Penggunaan
+## 🚀 Usage Guide
 
-**Jalankan langsung melalui entry-point dari Root Directory:**
+**Run directly via the root entry point module:**
 
 ```bash
-# Scrape seluruh bank (Default: Desember 2024)
+# Scrape all applicable banks (Default: December 2024)
 python main.py --bulan Desember --tahun 2024
 
-# Uji coba untuk 1 Bank spesifik (Filter Provinsi & Kota) & Batasi kuota Bank (Contoh Bali, Denpasar)
+# Targeted execution for 1 specific Bank (Example: Bali, Denpasar) & limit to 1 bank.
 python main.py --bulan Desember --tahun 2024 --provinsi DATI01126 --kota DATI01573 --max-banks 1
 
-# Mode interaktif / non-headless (menampilkan UI Browser Chrome terbuka)
+# Interactive / Non-headless mode (Displays the visible Chrome UI while running)
 python main.py --bulan Desember --tahun 2024 --max-banks 1 --headless
 ```
 
-## 🗄️ Struktur Database SQLite (`data/ojk_bpr.db`)
+## 🗄️ SQLite Database Schema (`data/ojk_bpr.db`)
 
-Semua hasil *scraping* dismpan otomatis untuk mencegah pengulangan saat terjadi interupsi:
+All scraped operations and progress checkpoints are securely saved to prevent redundant calls in case of system interruptions:
 
-| Tabel | Inti Data |
+| Table | Core Purpose |
 |-------|-----------|
-| `provinsi` | Kode & Name region dasar |
-| `kabupaten`| Kode & Name entitas region per provinsi |
-| `bank` | Nama BPR teregulasi, terhubung ke Kode Kabupaten |
-| `jenis_laporan` | Meta 5 tipe Laporan OJK |
-| `scrape_progress` | Track record ID apa saja yang SUDAH selesai |
-| `laporan_data` | **Data Row Keuangan final** |
+| `provinsi` | Fundamental region codes & names |
+| `kabupaten`| City region objects tied to provinces |
+| `bank` | Registered BPR entities linked to City codes |
+| `jenis_laporan` | Meta dictionary for the 5 OJK report types |
+| `scrape_progress` | Track record of which report IDs have been completed |
+| `laporan_data` | **Extracted financial row data** |
 
-## 💡 Pengetahuan Bypass UI OJK BPR (ExtJS/Ext.NET)
-Aplikasi Web OJK menggunakan renderan ExtJS Ext.NET versi tua yang memblokir *Native DOM Interaction*. Solusi *Bypass* dapat dipelajari mandiri di `/.agents/workflows/ojk_scraper_workflow.md` atau skrip eksperimental di berkas `/debug/`.
+## 💡 System Architecture: OJK BPR Ext.NET Bypass
+The OJK Web Application utilizes a legacy ExtJS wrapper (Ext.NET) which natively overrides and neutralizes ordinary *Native DOM Interaction* standard to typical scraping. The circumvention approaches utilizing DirectEvents are comprehensively documented inside `/.agents/workflows/ojk_scraper_workflow.md` or via the legacy test scripts under `/debug/`.

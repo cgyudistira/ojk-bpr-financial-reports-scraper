@@ -42,10 +42,10 @@ try:
     s.driver.save_screenshot(config.DOWNLOAD_DIR + "/debug_e2e_checked.png")
     logger.info("Screenshot: debug_e2e_checked.png")
     
-    # Step 7: Click Tampilkan  
-    logger.info("=== STEP 7: Click Tampilkan ===")
+    # Step 7: Click Display  
+    logger.info("=== STEP 7: Click Display ===")
     result = s.click_tampilkan()
-    logger.info(f"Tampilkan result: {result}")
+    logger.info(f"Display result: {result}")
     
     s.driver.save_screenshot(config.DOWNLOAD_DIR + "/debug_e2e_after_tampilkan.png")
     
@@ -60,7 +60,7 @@ try:
             for row in rows[:3]:
                 logger.info(f"    {row}")
     else:
-        logger.warning("Tampilkan failed — no report rendered")
+        logger.warning("Display failed — no report rendered")
         # Check what's in ReportViewerArea
         area_info = s._js("""
             var area = document.getElementById('ReportViewerArea');

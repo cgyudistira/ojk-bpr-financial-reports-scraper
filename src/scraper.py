@@ -307,11 +307,11 @@ class OJKScraper:
         logger.info(f"Checked {count} unique report types")
         time.sleep(2)
 
-    # ── Report Display (Tampilkan) ───────────────────────────
+    # ── Report Display (Display) ───────────────────────────
     @retry()
     def click_tampilkan(self):
-        """Click Tampilkan using getEl().dom.click() for real DOM event."""
-        logger.info("Clicking 'Tampilkan' button...")
+        """Click Display using getEl().dom.click() for real DOM event."""
+        logger.info("Clicking 'Display' button...")
         
         result = self._js("""
         try {
@@ -329,7 +329,7 @@ class OJKScraper:
         """)
         
         if result != 'ok':
-            logger.warning(f"Tampilkan click: {result}")
+            logger.warning(f"Display click: {result}")
             return False
 
         logger.info("Waiting for report to render (max 90s)...")
@@ -559,7 +559,7 @@ class OJKScraper:
                     continue
                     
                 if self._has_error_status():
-                    logger.warning("  ✗ Data tidak tersedia.")
+                    logger.warning("  ✗ Data unavailable.")
                     for rid in config.REPORT_TYPES.keys():
                         self.db.mark_scraped(bulan, tahun, p_code, c_code, b_code, rid, "no_data")
                     stats["no_data"] += 1
