@@ -240,13 +240,23 @@ class OJKScraper:
         time.sleep(config.REQUEST_DELAY)
 
     @retry()
-    def select_bank(self, code: str):
+    def select_bank(self, code: str, bank_name: str = ""):
         """Select bank — BankCode is Ext.net.DropDownField, not a combo.
-        It needs setValue() directly, no picker/store involved."""
-        logger.info(f"Selecting bank: {code}")
+        It needs setValue() directly, no picker/store involved.
+        
+        The server expects BankCode in 'code-name' format (e.g. '600083-PT BPR XYZ')
+        because ShowReportButton_DirectClick does String.Substring at the hyphen position.
+        """
+        # Build the full value string the server expects
+        if bank_name:
+            full_value = f"{code}-{bank_name}"
+        else:
+            full_value = code
+        
+        logger.info(f"Selecting bank: {full_value}")
         self._js(f"""
             var cmp = Ext.getCmp('BankCode');
-            if (cmp) {{ cmp.setValue('{code}'); }}
+            if (cmp) {{ cmp.setValue('{full_value}'); }}
         """)
         time.sleep(3)
         
@@ -260,6 +270,7 @@ class OJKScraper:
         if node_count == 0:
             raise WebDriverException("ReportTree empty after bank selection")
 
+
     def check_all_reports(self):
         """Check exactly 5 unique report types (handle duplicates)."""
         logger.info("Checking all report types...")
@@ -269,39 +280,23 @@ class OJKScraper:
         if (!t) return 0;
         var seen = {};
         var checked = 0;
-        var checkedIds = [];
         t.getRootNode().cascadeBy(function(node) {
             if (node.isLeaf()) {
                 var text = node.get('text');
-                var rid = node.getId();
                 if (!seen[text]) {
-                    node.set('checked', true);
-                    t.fireEvent('checkchange', node, true);
+                    // Use native ExtJS onCheckChange - this correctly serializes
+                    // the node into Ext.Net.SubmittedNode JSON format in the
+                    // hidden 'ReportTree_CheckNodes' field that the ASP.NET
+                    // server deserializes. Using fireEvent or join(',') causes
+                    // "Could not cast System.String to Ext.Net.SubmittedNode".
+                    t.getView().onCheckChange(node, true);
                     seen[text] = true;
                     checked++;
-                    checkedIds.push(rid);
                 } else {
                     node.set('checked', false);
                 }
             }
         });
-        
-        // CRITICAL FIX: The ASP.NET server reads from 'ReportTree_CheckNodes' hidden field
-        // ExtJS might not update it automatically when we use fireEvent
-        var inputs = document.getElementsByName('ReportTree_CheckNodes');
-        if (inputs.length > 0) {
-            inputs[0].value = checkedIds.join(',');
-        } else {
-            // Create it if it doesn't exist
-            var tdom = document.getElementById('ReportTree');
-            if (tdom) {
-                var input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'ReportTree_CheckNodes';
-                input.value = checkedIds.join(',');
-                tdom.appendChild(input);
-            }
-        }
         return checked;
         """)
         logger.info(f"Checked {count} unique report types")
@@ -315,6 +310,14 @@ class OJKScraper:
         
         result = self._js("""
         try {
+            // FIX: Ext.NET ComboBox submits display text instead of value codes
+            // because hiddenName is not configured. The server expects DATI codes
+            // in ProvinceCode/CityCode fields (it does Substring on them).
+            var prov = Ext.getCmp('ProvinceCode');
+            if (prov) { prov.inputEl.dom.value = prov.getValue(); }
+            var city = Ext.getCmp('CityCode');
+            if (city) { city.inputEl.dom.value = city.getValue(); }
+            
             var btn = Ext.getCmp('ShowReportButton');
             if (!btn) return 'no_cmp';
             if (btn.isDisabled()) return 'disabled';
@@ -545,7 +548,7 @@ class OJKScraper:
                 self.set_period(bulan, tahun)
                 self.select_province(p_code)
                 self.select_city(c_code)
-                self.select_bank(b_code)
+                self.select_bank(b_code, b_name)
                 self.check_all_reports()
                 
                 # Debug screenshot for first bank
