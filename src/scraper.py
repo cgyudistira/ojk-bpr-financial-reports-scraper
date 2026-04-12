@@ -386,93 +386,252 @@ class OJKScraper:
 
     # ── Data Extraction ──────────────────────────────────────
     def parse_report_tables(self) -> Dict[str, List[Dict]]:
-        """Extract report data from iframes in ReportViewerArea."""
-        iframes_data = self._js("""
+        """Extract report data from SSRS iframes in ReportViewerArea.
+        
+        Uses JavaScript to parse the SSRS report tables directly in the browser,
+        which is more reliable than HTML parsing due to deeply nested SSRS layout.
+        
+        Returns dict mapping report_id -> list of row dicts.
+        Laporan 1,2,4: {'pos': str, 'nilai_periode': str, 'nilai_tahun_sebelumnya': str}
+        Laporan 3:     {'pos': str, 'nilai_l': str, 'nilai_dpk': str, 'nilai_kl': str,
+                         'nilai_d': str, 'nilai_m': str, 'nilai_jumlah': str}
+        """
+        # Wait for iframe content to fully load (multi-page reports need extra time)
+        time.sleep(10)
+        
+        iframe_count = self._js("""
             var area = document.getElementById('ReportViewerArea');
-            if (!area) return [];
+            return area ? area.getElementsByTagName('iframe').length : 0;
+        """)
+        
+        if not iframe_count:
+            logger.warning("No iframes found in ReportViewerArea")
+            return {}
+        
+        results = {}
+        
+        # Report IDs in order of iframe rendering
+        report_ids = list(config.REPORT_TYPES.keys())
+        
+        for idx in range(min(iframe_count, 5)):
+            report_id = report_ids[idx] if idx < len(report_ids) else None
+            if not report_id:
+                continue
+            
+            # Skip Laporan 5 (Informasi Lainnya) - non-tabular data
+            if report_id == 'BPK-901-000005':
+                logger.info(f"  Skipping {config.REPORT_TYPES[report_id]} (non-tabular)")
+                continue
+            
+            # Use different extraction JS for Kualitas Aset (6 value cols)
+            if report_id == 'BPK-901-000003':
+                rows = self._extract_kualitas_aset(idx)
+            else:
+                rows = self._extract_standard_report(idx)
+            
+            if rows:
+                results[report_id] = rows
+                logger.info(f"  Iframe {idx} ({config.REPORT_TYPES[report_id]}): {len(rows)} rows")
+            else:
+                logger.warning(f"  Iframe {idx} ({config.REPORT_TYPES[report_id]}): no data")
+        
+        return results
+
+    def _extract_standard_report(self, iframe_idx: int) -> List[Dict]:
+        """Extract 3-column report data (Pos, Periode, Tahun Sebelumnya) from iframe.
+        
+        Strategy: Find the oReportDiv, then locate the largest table inside it.
+        SSRS puts headers and data in separate nested tables. The data table
+        is the one with the most rows.
+        """
+        data = self._js(f"""
+            var area = document.getElementById('ReportViewerArea');
             var iframes = area.getElementsByTagName('iframe');
+            if ({iframe_idx} >= iframes.length) return [];
+            
+            var doc = iframes[{iframe_idx}].contentDocument || iframes[{iframe_idx}].contentWindow.document;
+            
+            // Find the report content div
+            var reportDiv = doc.querySelector('[id*="oReportDiv"]');
+            if (!reportDiv) return [];
+            
+            // Find the largest table (by row count) inside report div - that's the data
+            var allTables = reportDiv.getElementsByTagName('table');
+            var dataTable = null;
+            var maxRows = 0;
+            
+            for (var t = 0; t < allTables.length; t++) {{
+                if (allTables[t].rows.length > maxRows) {{
+                    maxRows = allTables[t].rows.length;
+                    dataTable = allTables[t];
+                }}
+            }}
+            
+            if (!dataTable || maxRows < 5) return [];
+            
             var results = [];
-            for (var i=0; i<iframes.length; i++) {
-                try {
-                    var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                    if (doc.body) {
-                        results.push({ id: iframes[i].id, html: doc.body.innerHTML });
-                    }
-                } catch(e) {}
-            }
+            var trs = dataTable.rows;
+            
+            for (var r = 0; r < trs.length; r++) {{
+                var cells = trs[r].cells;
+                if (!cells || cells.length < 3) continue;
+                
+                var cellTexts = [];
+                for (var c = 0; c < cells.length; c++) {{
+                    var txt = cells[c].innerText || '';
+                    cellTexts.push(txt.trim().split(String.fromCharCode(10)).join(' '));
+                }}
+                
+                // Skip header/empty rows
+                var pos = '';
+                var val1 = '';
+                var val2 = '';
+                
+                // Find the cell with meaningful text (pos name)
+                // Skip leading empty cells
+                var dataIdx = -1;
+                for (var c = 0; c < cellTexts.length; c++) {{
+                    if (cellTexts[c].length > 1 && 
+                        cellTexts[c].toLowerCase() !== 'satuan rp.' &&
+                        cellTexts[c].indexOf('Laporan Publikasi') < 0) {{
+                        dataIdx = c;
+                        break;
+                    }}
+                }}
+                
+                if (dataIdx < 0) continue;
+                
+                pos = cellTexts[dataIdx];
+                // Values are typically the last 2 cells
+                val1 = cellTexts.length > dataIdx + 1 ? cellTexts[dataIdx + 1] : '';
+                val2 = cellTexts.length > dataIdx + 2 ? cellTexts[dataIdx + 2] : '';
+                
+                // Skip non-data rows
+                if (pos.toLowerCase() === 'pos' || pos.indexOf('Posisi') === 0 ||
+                    pos.indexOf('Laporan keuangan tahunan') >= 0 ||
+                    pos.indexOf('Informasi keuangan') >= 0 ||
+                    pos.indexOf('Laporan Keuangan') >= 0) continue;
+                
+                results.push({{pos: pos, v1: val1, v2: val2}});
+            }}
+            
             return results;
         """)
         
-        if not iframes_data:
-            html = self._js(
-                "var a = document.getElementById('ReportViewerArea'); return a ? a.innerHTML : '';"
-            )
-            if html and len(html) > 100:
-                iframes_data = [{"id": "direct", "html": html}]
-            else:
-                return {}
+        if not data:
+            return []
+        
+        return [
+            {
+                'pos': r['pos'],
+                'nilai_periode': self._clean_num(r.get('v1', '')),
+                'nilai_tahun_sebelumnya': self._clean_num(r.get('v2', ''))
+            }
+            for r in data if r.get('pos')
+        ]
 
-        results = {}
-        for item in iframes_data:
-            html = item.get("html", "")
-            if not html or len(html) < 50:
-                continue
+    def _extract_kualitas_aset(self, iframe_idx: int) -> List[Dict]:
+        """Extract Kualitas Aset data (Pos, L, DPK, KL, D, M, Jumlah) from iframe.
+        
+        Same strategy: find oReportDiv, then the largest table.
+        This table has 8 columns: (empty), Pos, L, DPK, KL, D, M, Jumlah.
+        """
+        data = self._js(f"""
+            var area = document.getElementById('ReportViewerArea');
+            var iframes = area.getElementsByTagName('iframe');
+            if ({iframe_idx} >= iframes.length) return [];
+            
+            var doc = iframes[{iframe_idx}].contentDocument || iframes[{iframe_idx}].contentWindow.document;
+            
+            var reportDiv = doc.querySelector('[id*="oReportDiv"]');
+            if (!reportDiv) return [];
+            
+            // Find largest table by row count
+            var allTables = reportDiv.getElementsByTagName('table');
+            var dataTable = null;
+            var maxRows = 0;
+            
+            for (var t = 0; t < allTables.length; t++) {{
+                if (allTables[t].rows.length > maxRows) {{
+                    maxRows = allTables[t].rows.length;
+                    dataTable = allTables[t];
+                }}
+            }}
+            
+            if (!dataTable || maxRows < 5) return [];
+            
+            var results = [];
+            var trs = dataTable.rows;
+            
+            for (var r = 0; r < trs.length; r++) {{
+                var cells = trs[r].cells;
+                if (!cells || cells.length < 7) continue;
                 
-            soup = BeautifulSoup(html, 'html.parser')
-            tables = soup.find_all('table')
-            
-            report_id = None
-            for table in tables:
-                text = table.get_text(' ', strip=True).lower()
-                det_id = self._detect_report_type(text)
-                if det_id:
-                    report_id = det_id
+                var cellTexts = [];
+                for (var c = 0; c < cells.length; c++) {{
+                    var txt = cells[c].innerText || '';
+                    cellTexts.push(txt.trim().split(String.fromCharCode(10)).join(' '));
+                }}
                 
-                rows = table.find_all('tr')
-                if len(rows) < 3 or not report_id:
-                    continue
-                    
-                parsed = self._parse_rows(rows)
-                if parsed:
-                    if report_id not in results:
-                        results[report_id] = []
-                    results[report_id].extend(parsed)
-                    
-        return results
-
-    def _detect_report_type(self, text: str) -> Optional[str]:
-        if 'posisi keuangan' in text or 'neraca' in text: return 'BPK-901-000001'
-        if 'laba' in text and 'rugi' in text: return 'BPK-901-000002'
-        if 'kualitas aset' in text or 'aktiva' in text: return 'BPK-901-000003'
-        if 'komitmen' in text and 'kontinjensi' in text: return 'BPK-901-000004'
-        if 'informasi lainnya' in text: return 'BPK-901-000005'
-        return None
-
-    def _parse_rows(self, rows) -> List[Dict]:
-        data = []
-        found_header = False
-        for row in rows:
-            cells = [c.get_text(strip=True) for c in row.find_all(['td', 'th'])]
-            if len(cells) < 2: continue
-            
-            joined = ' '.join(cells).lower()
-            if not found_header:
-                if 'pos' in joined and ('tanggal' in joined or 'periode' in joined):
-                    found_header = True
-                continue
+                // Find the pos name (first non-empty, non-header cell)
+                var pos = '';
+                var dataStart = -1;
+                for (var c = 0; c < cellTexts.length; c++) {{
+                    var t = cellTexts[c];
+                    if (t.length > 1 && t.toLowerCase() !== 'satuan rp.' &&
+                        t.indexOf('Laporan Publikasi') < 0 &&
+                        t.toLowerCase() !== 'pos') {{
+                        pos = t;
+                        dataStart = c;
+                        break;
+                    }}
+                }}
                 
-            pos = cells[0].strip()
-            if not pos or pos.lower() in ('pos', 'no', 'satuan rp.'): continue
+                if (!pos || dataStart < 0) continue;
+                if (pos.indexOf('Nominal Dalam') >= 0 || pos.indexOf('Laporan keuangan') >= 0 ||
+                    pos.indexOf('Informasi keuangan') >= 0) continue;
+                
+                // Skip header rows (L | DPK | KL | D | M | Jumlah)
+                var joined = cellTexts.join(' ').toLowerCase();
+                if (joined.indexOf('dpk') >= 0 && joined.indexOf('jumlah') >= 0) continue;
+                
+                // Values follow the pos: L, DPK, KL, D, M, Jumlah
+                var vals = cellTexts.slice(dataStart + 1);
+                // Filter out empty-string vals except keep numerics and zeros
+                while (vals.length < 6) vals.push('');
+                if (vals.length > 6) vals = vals.slice(vals.length - 6);
+                
+                results.push({{
+                    pos: pos,
+                    l: vals[0], dpk: vals[1], kl: vals[2],
+                    d: vals[3], m: vals[4], jumlah: vals[5]
+                }});
+            }}
             
-            v1 = self._clean_num(cells[1]) if len(cells) > 1 else '0'
-            v2 = self._clean_num(cells[2]) if len(cells) > 2 else '0'
-            
-            data.append({'pos': pos, 'nilai_periode': v1, 'nilai_tahun_sebelumnya': v2})
-        return data
+            return results;
+        """)
+        
+        if not data:
+            return []
+        
+        return [
+            {
+                'pos': r['pos'],
+                'nilai_l': self._clean_num(r.get('l', '')),
+                'nilai_dpk': self._clean_num(r.get('dpk', '')),
+                'nilai_kl': self._clean_num(r.get('kl', '')),
+                'nilai_d': self._clean_num(r.get('d', '')),
+                'nilai_m': self._clean_num(r.get('m', '')),
+                'nilai_jumlah': self._clean_num(r.get('jumlah', '')),
+            }
+            for r in data if r.get('pos')
+        ]
 
     def _clean_num(self, val: str) -> str:
-        if not val or val == '-': return '0'
-        return val.replace('\xa0', '').replace(' ', '')
+        """Clean a numeric string from Indonesian formatting."""
+        if not val or val.strip() in ('-', '', 'N/A'):
+            return '0'
+        return val.replace('\xa0', '').replace(' ', '').strip()
 
     def _has_error_status(self) -> bool:
         status = self._js(
@@ -570,7 +729,15 @@ class OJKScraper:
                     data = self.parse_report_tables()
                     if data:
                         for rid, rows in data.items():
-                            self.db.save_laporan_rows(bulan, tahun, p_code, c_code, b_code, rid, rows)
+                            if rid == 'BPK-901-000003':
+                                # Kualitas Aset uses separate table with 6 value columns
+                                self.db.save_kualitas_aset_rows(
+                                    bulan, tahun, p_code, c_code, b_code, rows
+                                )
+                            else:
+                                self.db.save_laporan_rows(
+                                    bulan, tahun, p_code, c_code, b_code, rid, rows
+                                )
                             self.db.mark_scraped(bulan, tahun, p_code, c_code, b_code, rid, "done")
                         stats["done"] += 1
                         logger.info(f"  ✓ Extracted {len(data)} reports, {sum(len(r) for r in data.values())} rows.")

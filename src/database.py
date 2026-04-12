@@ -95,6 +95,29 @@ class Database:
                        kabupaten_code, bank_code, jenis_laporan_code, pos)
             );
 
+            -- Laporan 3: Kualitas Aset Produktif (6 value columns by collectibility)
+            CREATE TABLE IF NOT EXISTS laporan_kualitas_aset (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                periode_bulan TEXT NOT NULL,
+                periode_tahun TEXT NOT NULL,
+                provinsi_code TEXT NOT NULL,
+                kabupaten_code TEXT NOT NULL,
+                bank_code TEXT NOT NULL,
+                pos TEXT NOT NULL,
+                nilai_l TEXT,
+                nilai_dpk TEXT,
+                nilai_kl TEXT,
+                nilai_d TEXT,
+                nilai_m TEXT,
+                nilai_jumlah TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (provinsi_code) REFERENCES provinsi(code),
+                FOREIGN KEY (kabupaten_code) REFERENCES kabupaten(code),
+                FOREIGN KEY (bank_code) REFERENCES bank(code),
+                UNIQUE(periode_bulan, periode_tahun, provinsi_code,
+                       kabupaten_code, bank_code, pos)
+            );
+
             CREATE TABLE IF NOT EXISTS scrape_progress (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 periode_bulan TEXT NOT NULL,
@@ -115,6 +138,10 @@ class Database:
                 ON laporan_data(bank_code);
             CREATE INDEX IF NOT EXISTS idx_laporan_jenis
                 ON laporan_data(jenis_laporan_code);
+            CREATE INDEX IF NOT EXISTS idx_kualitas_aset_bank
+                ON laporan_kualitas_aset(bank_code);
+            CREATE INDEX IF NOT EXISTS idx_kualitas_aset_periode
+                ON laporan_kualitas_aset(periode_bulan, periode_tahun);
             CREATE INDEX IF NOT EXISTS idx_progress_lookup
                 ON scrape_progress(periode_bulan, periode_tahun,
                     provinsi_code, kabupaten_code, bank_code, jenis_laporan_code);
@@ -155,6 +182,44 @@ class Database:
         self.conn.execute(
             "INSERT OR IGNORE INTO bank (code, nama, kabupaten_code, provinsi_code) VALUES (?, ?, ?, ?)",
             (code, nama, kabupaten_code, provinsi_code)
+        )
+        self.conn.commit()
+
+    def save_kualitas_aset_rows(
+        self,
+        periode_bulan: str,
+        periode_tahun: str,
+        provinsi_code: str,
+        kabupaten_code: str,
+        bank_code: str,
+        rows: list[dict],
+    ):
+        """
+        Batch insert Laporan Kualitas Aset rows.
+        Each row dict has keys: 'pos', 'nilai_l', 'nilai_dpk', 'nilai_kl',
+        'nilai_d', 'nilai_m', 'nilai_jumlah'
+        """
+        if not rows:
+            return
+        self.conn.executemany(
+            """INSERT OR REPLACE INTO laporan_kualitas_aset
+               (periode_bulan, periode_tahun, provinsi_code, kabupaten_code,
+                bank_code, pos, nilai_l, nilai_dpk, nilai_kl, nilai_d, nilai_m, nilai_jumlah)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    periode_bulan, periode_tahun, provinsi_code, kabupaten_code,
+                    bank_code,
+                    r.get("pos", ""),
+                    r.get("nilai_l", ""),
+                    r.get("nilai_dpk", ""),
+                    r.get("nilai_kl", ""),
+                    r.get("nilai_d", ""),
+                    r.get("nilai_m", ""),
+                    r.get("nilai_jumlah", ""),
+                )
+                for r in rows
+            ],
         )
         self.conn.commit()
 
