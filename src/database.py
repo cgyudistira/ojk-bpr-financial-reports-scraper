@@ -83,16 +83,21 @@ class Database:
                 kabupaten_code TEXT NOT NULL,
                 bank_code TEXT NOT NULL,
                 jenis_laporan_code TEXT NOT NULL,
-                pos TEXT NOT NULL,
-                nilai_periode TEXT,
-                nilai_tahun_sebelumnya TEXT,
+                urutan INTEGER NOT NULL,
+                kategori_utama TEXT,
+                level_hierarki INTEGER DEFAULT 0,
+                is_header BOOLEAN DEFAULT 0,
+                pos_prefix TEXT,
+                pos_nama TEXT NOT NULL,
+                nilai_periode REAL,
+                nilai_tahun_sebelumnya REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (provinsi_code) REFERENCES provinsi(code),
                 FOREIGN KEY (kabupaten_code) REFERENCES kabupaten(code),
                 FOREIGN KEY (bank_code) REFERENCES bank(code),
                 FOREIGN KEY (jenis_laporan_code) REFERENCES jenis_laporan(code),
                 UNIQUE(periode_bulan, periode_tahun, provinsi_code,
-                       kabupaten_code, bank_code, jenis_laporan_code, pos)
+                       kabupaten_code, bank_code, jenis_laporan_code, urutan)
             );
 
             -- Laporan 3: Kualitas Aset Produktif (6 value columns by collectibility)
@@ -103,19 +108,24 @@ class Database:
                 provinsi_code TEXT NOT NULL,
                 kabupaten_code TEXT NOT NULL,
                 bank_code TEXT NOT NULL,
-                pos TEXT NOT NULL,
-                nilai_l TEXT,
-                nilai_dpk TEXT,
-                nilai_kl TEXT,
-                nilai_d TEXT,
-                nilai_m TEXT,
-                nilai_jumlah TEXT,
+                urutan INTEGER NOT NULL,
+                kategori_utama TEXT,
+                level_hierarki INTEGER DEFAULT 0,
+                is_header BOOLEAN DEFAULT 0,
+                pos_prefix TEXT,
+                pos_nama TEXT NOT NULL,
+                nilai_l REAL,
+                nilai_dpk REAL,
+                nilai_kl REAL,
+                nilai_d REAL,
+                nilai_m REAL,
+                nilai_jumlah REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (provinsi_code) REFERENCES provinsi(code),
                 FOREIGN KEY (kabupaten_code) REFERENCES kabupaten(code),
                 FOREIGN KEY (bank_code) REFERENCES bank(code),
                 UNIQUE(periode_bulan, periode_tahun, provinsi_code,
-                       kabupaten_code, bank_code, pos)
+                       kabupaten_code, bank_code, urutan)
             );
 
             CREATE TABLE IF NOT EXISTS scrape_progress (
@@ -204,19 +214,26 @@ class Database:
         self.conn.executemany(
             """INSERT OR REPLACE INTO laporan_kualitas_aset
                (periode_bulan, periode_tahun, provinsi_code, kabupaten_code,
-                bank_code, pos, nilai_l, nilai_dpk, nilai_kl, nilai_d, nilai_m, nilai_jumlah)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                bank_code, urutan, kategori_utama, level_hierarki, is_header,
+                pos_prefix, pos_nama, nilai_l, nilai_dpk, nilai_kl,
+                nilai_d, nilai_m, nilai_jumlah)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     periode_bulan, periode_tahun, provinsi_code, kabupaten_code,
                     bank_code,
-                    r.get("pos", ""),
-                    r.get("nilai_l", ""),
-                    r.get("nilai_dpk", ""),
-                    r.get("nilai_kl", ""),
-                    r.get("nilai_d", ""),
-                    r.get("nilai_m", ""),
-                    r.get("nilai_jumlah", ""),
+                    r.get("urutan", 0),
+                    r.get("kategori_utama", ""),
+                    r.get("level_hierarki", 0),
+                    r.get("is_header", 0),
+                    r.get("pos_prefix", ""),
+                    r.get("pos_nama", ""),
+                    r.get("nilai_l"),
+                    r.get("nilai_dpk"),
+                    r.get("nilai_kl"),
+                    r.get("nilai_d"),
+                    r.get("nilai_m"),
+                    r.get("nilai_jumlah"),
                 )
                 for r in rows
             ],
@@ -250,15 +267,22 @@ class Database:
         self.conn.executemany(
             """INSERT OR REPLACE INTO laporan_data
                (periode_bulan, periode_tahun, provinsi_code, kabupaten_code,
-                bank_code, jenis_laporan_code, pos, nilai_periode, nilai_tahun_sebelumnya)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                bank_code, jenis_laporan_code, urutan, kategori_utama,
+                level_hierarki, is_header, pos_prefix, pos_nama, 
+                nilai_periode, nilai_tahun_sebelumnya)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     periode_bulan, periode_tahun, provinsi_code, kabupaten_code,
                     bank_code, jenis_laporan_code,
-                    r.get("pos", ""),
-                    r.get("nilai_periode", ""),
-                    r.get("nilai_tahun_sebelumnya", ""),
+                    r.get("urutan", 0),
+                    r.get("kategori_utama", ""),
+                    r.get("level_hierarki", 0),
+                    r.get("is_header", 0),
+                    r.get("pos_prefix", ""),
+                    r.get("pos_nama", ""),
+                    r.get("nilai_periode"),
+                    r.get("nilai_tahun_sebelumnya"),
                 )
                 for r in rows
             ],

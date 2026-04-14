@@ -471,6 +471,8 @@ class OJKScraper:
             
             var results = [];
             var trs = dataTable.rows;
+            var currentKategori = '';
+            var validRowIdx = 1;
             
             for (var r = 0; r < trs.length; r++) {{
                 var cells = trs[r].cells;
@@ -483,12 +485,6 @@ class OJKScraper:
                 }}
                 
                 // Skip header/empty rows
-                var pos = '';
-                var val1 = '';
-                var val2 = '';
-                
-                // Find the cell with meaningful text (pos name)
-                // Skip leading empty cells
                 var dataIdx = -1;
                 for (var c = 0; c < cellTexts.length; c++) {{
                     if (cellTexts[c].length > 1 && 
@@ -501,18 +497,55 @@ class OJKScraper:
                 
                 if (dataIdx < 0) continue;
                 
-                pos = cellTexts[dataIdx];
+                var posRaw = cellTexts[dataIdx];
                 // Values are typically the last 2 cells
-                val1 = cellTexts.length > dataIdx + 1 ? cellTexts[dataIdx + 1] : '';
-                val2 = cellTexts.length > dataIdx + 2 ? cellTexts[dataIdx + 2] : '';
+                var val1 = cellTexts.length > dataIdx + 1 ? cellTexts[dataIdx + 1] : '';
+                var val2 = cellTexts.length > dataIdx + 2 ? cellTexts[dataIdx + 2] : '';
                 
                 // Skip non-data rows
-                if (pos.toLowerCase() === 'pos' || pos.indexOf('Posisi') === 0 ||
-                    pos.indexOf('Laporan keuangan tahunan') >= 0 ||
-                    pos.indexOf('Informasi keuangan') >= 0 ||
-                    pos.indexOf('Laporan Keuangan') >= 0) continue;
+                if (posRaw.toLowerCase() === 'pos' || posRaw.indexOf('Posisi') === 0 ||
+                    posRaw.indexOf('Laporan keuangan tahunan') >= 0 ||
+                    posRaw.indexOf('Informasi keuangan') >= 0 ||
+                    posRaw.indexOf('Laporan Keuangan') >= 0) continue;
                 
-                results.push({{pos: pos, v1: val1, v2: val2}});
+                // Hierarchy parsing
+                var isHeader = 0;
+                var level = 0;
+                var prefix = '';
+                var cleanName = posRaw.replace(/[\xA0]+/g, ' ').trim();
+                
+                // Detect indentation using raw inner text
+                var rawInnerText = cells[dataIdx].innerText || '';
+                var matchNbsp = rawInnerText.match(/^[\xA0\s]+/);
+                if (matchNbsp) {{
+                    level = Math.floor(matchNbsp[0].length / 3);
+                    if(level === 0) level = 1;
+                }}
+                
+                // Extract Prefix
+                var prefMatch = cleanName.match(/^([a-zA-Z0-9]{1,3}\.)\s+(.+)$/);
+                if (prefMatch) {{
+                    prefix = prefMatch[1];
+                    cleanName = prefMatch[2];
+                    if(level === 0) level = 1;
+                }}
+                
+                // Category Header (ALL CAPS, no prefix)
+                if (cleanName === cleanName.toUpperCase() && !prefix && cleanName.length > 2) {{
+                    isHeader = 1;
+                    currentKategori = cleanName;
+                }}
+                
+                results.push({{
+                    urutan: validRowIdx++,
+                    kategori_utama: currentKategori,
+                    level_hierarki: level,
+                    is_header: isHeader,
+                    pos_prefix: prefix,
+                    pos_nama: cleanName,
+                    v1: val1, 
+                    v2: val2
+                }});
             }}
             
             return results;
@@ -523,11 +556,16 @@ class OJKScraper:
         
         return [
             {
-                'pos': r['pos'],
+                'urutan': r['urutan'],
+                'kategori_utama': r.get('kategori_utama', ''),
+                'level_hierarki': r.get('level_hierarki', 0),
+                'is_header': r.get('is_header', 0),
+                'pos_prefix': r.get('pos_prefix', ''),
+                'pos_nama': r.get('pos_nama', ''),
                 'nilai_periode': self._clean_num(r.get('v1', '')),
                 'nilai_tahun_sebelumnya': self._clean_num(r.get('v2', ''))
             }
-            for r in data if r.get('pos')
+            for r in data if r.get('pos_nama')
         ]
 
     def _extract_kualitas_aset(self, iframe_idx: int) -> List[Dict]:
@@ -562,6 +600,8 @@ class OJKScraper:
             
             var results = [];
             var trs = dataTable.rows;
+            var currentKategori = '';
+            var validRowIdx = 1;
             
             for (var r = 0; r < trs.length; r++) {{
                 var cells = trs[r].cells;
@@ -574,22 +614,22 @@ class OJKScraper:
                 }}
                 
                 // Find the pos name (first non-empty, non-header cell)
-                var pos = '';
+                var posRaw = '';
                 var dataStart = -1;
                 for (var c = 0; c < cellTexts.length; c++) {{
                     var t = cellTexts[c];
                     if (t.length > 1 && t.toLowerCase() !== 'satuan rp.' &&
                         t.indexOf('Laporan Publikasi') < 0 &&
                         t.toLowerCase() !== 'pos') {{
-                        pos = t;
+                        posRaw = t;
                         dataStart = c;
                         break;
                     }}
                 }}
                 
-                if (!pos || dataStart < 0) continue;
-                if (pos.indexOf('Nominal Dalam') >= 0 || pos.indexOf('Laporan keuangan') >= 0 ||
-                    pos.indexOf('Informasi keuangan') >= 0) continue;
+                if (!posRaw || dataStart < 0) continue;
+                if (posRaw.indexOf('Nominal Dalam') >= 0 || posRaw.indexOf('Laporan keuangan') >= 0 ||
+                    posRaw.indexOf('Informasi keuangan') >= 0) continue;
                 
                 // Skip header rows (L | DPK | KL | D | M | Jumlah)
                 var joined = cellTexts.join(' ').toLowerCase();
@@ -601,8 +641,41 @@ class OJKScraper:
                 while (vals.length < 6) vals.push('');
                 if (vals.length > 6) vals = vals.slice(vals.length - 6);
                 
+                // Hierarchy parsing
+                var isHeader = 0;
+                var level = 0;
+                var prefix = '';
+                var cleanName = posRaw.replace(/[\xA0]+/g, ' ').trim();
+                
+                // Detect indentation using raw inner text
+                var rawInnerText = cells[dataStart].innerText || '';
+                var matchNbsp = rawInnerText.match(/^[\xA0\s]+/);
+                if (matchNbsp) {{
+                    level = Math.floor(matchNbsp[0].length / 3);
+                    if(level === 0) level = 1;
+                }}
+                
+                // Extract Prefix
+                var prefMatch = cleanName.match(/^([a-zA-Z0-9]{1,3}\.)\s+(.+)$/);
+                if (prefMatch) {{
+                    prefix = prefMatch[1];
+                    cleanName = prefMatch[2];
+                    if(level === 0) level = 1;
+                }}
+                
+                // Category Header (ALL CAPS, no prefix)
+                if (cleanName === cleanName.toUpperCase() && !prefix && cleanName.length > 2) {{
+                    isHeader = 1;
+                    currentKategori = cleanName;
+                }}
+                
                 results.push({{
-                    pos: pos,
+                    urutan: validRowIdx++,
+                    kategori_utama: currentKategori,
+                    level_hierarki: level,
+                    is_header: isHeader,
+                    pos_prefix: prefix,
+                    pos_nama: cleanName,
                     l: vals[0], dpk: vals[1], kl: vals[2],
                     d: vals[3], m: vals[4], jumlah: vals[5]
                 }});
@@ -616,7 +689,12 @@ class OJKScraper:
         
         return [
             {
-                'pos': r['pos'],
+                'urutan': r['urutan'],
+                'kategori_utama': r.get('kategori_utama', ''),
+                'level_hierarki': r.get('level_hierarki', 0),
+                'is_header': r.get('is_header', 0),
+                'pos_prefix': r.get('pos_prefix', ''),
+                'pos_nama': r.get('pos_nama', ''),
                 'nilai_l': self._clean_num(r.get('l', '')),
                 'nilai_dpk': self._clean_num(r.get('dpk', '')),
                 'nilai_kl': self._clean_num(r.get('kl', '')),
@@ -624,14 +702,21 @@ class OJKScraper:
                 'nilai_m': self._clean_num(r.get('m', '')),
                 'nilai_jumlah': self._clean_num(r.get('jumlah', '')),
             }
-            for r in data if r.get('pos')
+            for r in data if r.get('pos_nama')
         ]
 
-    def _clean_num(self, val: str) -> str:
-        """Clean a numeric string from Indonesian formatting."""
+    def _clean_num(self, val: str) -> float:
+        """Clean a numeric string from Indonesian formatting and return a float."""
         if not val or val.strip() in ('-', '', 'N/A'):
-            return '0'
-        return val.replace('\xa0', '').replace(' ', '').strip()
+            return 0.0
+        # Remove normal space, non-breaking space
+        v = str(val).replace('\xa0', '').replace(' ', '').strip()
+        # The OJK reports use comma for thousands
+        v = v.replace(',', '')
+        try:
+            return float(v)
+        except ValueError:
+            return 0.0
 
     def _has_error_status(self) -> bool:
         status = self._js(

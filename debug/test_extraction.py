@@ -66,11 +66,11 @@ print(f"  scrape_progress:        {prog_count} entries")
 
 # Show sample rows
 print("\n=== Sample laporan_data ===")
-for row in db.conn.execute("SELECT jenis_laporan_code, pos, nilai_periode, nilai_tahun_sebelumnya FROM laporan_data LIMIT 5").fetchall():
+for row in db.conn.execute("SELECT jenis_laporan_code, pos_nama, nilai_periode, nilai_tahun_sebelumnya FROM laporan_data LIMIT 5").fetchall():
     print(f"  [{row[0]}] {row[1]}: {row[2]} | {row[3]}")
 
 print("\n=== Sample laporan_kualitas_aset ===")
-for row in db.conn.execute("SELECT pos, nilai_l, nilai_dpk, nilai_kl, nilai_d, nilai_m, nilai_jumlah FROM laporan_kualitas_aset LIMIT 5").fetchall():
+for row in db.conn.execute("SELECT pos_nama, nilai_l, nilai_dpk, nilai_kl, nilai_d, nilai_m, nilai_jumlah FROM laporan_kualitas_aset LIMIT 5").fetchall():
     print(f"  {row[0]}: L={row[1]} | DPK={row[2]} | KL={row[3]} | D={row[4]} | M={row[5]} | Jumlah={row[6]}")
 
 s.driver.quit()
